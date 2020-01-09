@@ -1,0 +1,480 @@
+<!--
+	Ant build file for BeanShell
+	http://www.beanshell.org/
+
+	Uses Ant 1.3
+	http://www.apache.org/
+
+	Ant issues - I've been told these are fixed in Ant 1.4.
+
+		- Why can't I nest filesets?  This seems like it would be so easy and
+		useful...
+
+		- Why does a fileset cause an error if the target directory does not
+		exist...  This seems wrong, the set should be empty.  And we can't 
+		control the order of evaluation by wrapping the fileset in a target
+		because they won't accept them... e.g. I can't make a target that sets
+		up the build dir!  It has to be done manually the first time (or put
+		in the jar file). There must be a way to fix this...
+-->
+<project name="beanshell" default="compile" basedir=".">
+
+<!-- Project Configuration -->
+
+<property name="file" value=""/>
+
+	<property name="version" value="1.3.0"/>
+	<property name="deprecation" value="on"/>
+
+	<!-- choose an alternate compiler -->
+	<!-- 
+		<property name="build-compiler" value="modern"/> 
+		<property name="build-compiler" value="jikes"/> 
+	-->
+
+	<property name="src-dir" value="src" />
+	<property name="build-dir" value="classes" />
+	<property name="lib-dir" value="lib" />
+	<property name="dist-dir" value="dist" />
+	<property name="test-src-dir" value="tests/classes" />
+	<property name="javadoc-dir" value="javadoc" />
+	<property name="bsf-src-dir" value="bsf/src" />
+
+	<!--
+		Let's just add the jar to the classpath from now on...
+
+	<property name="javacc-lib" 
+		value="/pkg/javacc/bin/lib/JavaCC.zip"/>
+	<property name="javacc-lib" 
+		value="/home/niemeyp/pkg/javacc/bin/lib/JavaCC.zip"/>
+	-->
+
+	<!-- 
+		Optional things you can't build under older versions of Java
+		or which require optional packages.
+		I think we can automate this in ant... deal with it later.
+	-->
+
+	<!-- Uncomment to build under JDK1.2 without warnings 
+	<property name="exclude-1.2" 
+		value="bsh/XThis.java,bsh/util/ClassBrowser.java"/>
+	-->
+
+	<!-- Uncomment to build under JDK1.1 without warnings 
+	<property name="exclude-1.1" 
+		value="bsh/JThis.java,bsh/classpath/*,bsh/util/*,bsh/reflect/*"/>
+	-->
+
+	<!-- Uncomment to build without making the BSF adapter 
+	<property name="exclude-bsf" 
+		value="bsh/util/BeanShellBSFEngine.java,TestBshBSF.java"/>
+	-->
+
+	<!-- Uncomment to build without making the servlet package 
+	<property name="exclude-servlet" 
+		value="bsh/servlet/*"/>
+	-->
+
+	<!--  Add up all of the excludes -->
+	<!-- how do I add strings to break that line? -->
+	<property name="excludes" 
+		value="${exclude-1.2},${exclude-1.1},${exclude-bsf},${exclude-servlet}"/>
+
+	<!-- JARs -->
+	<property name="javadoc-jar" value="${dist-dir}/javadoc.zip"/>
+	<property name="core-jar" value="${dist-dir}/bsh-core-${version}.jar"/>
+	<property name="src-jar" value="${dist-dir}/bsh-${version}-src.jar"/>
+	<property name="all-jar-name" value="bsh-${version}.jar"/>
+	<property name="all-jar" value="${dist-dir}/${all-jar-name}"/>
+	<property name="commands-jar" 
+		value="${dist-dir}/bsh-commands-${version}.jar"/>
+	<property name="classpath-jar" 
+		value="${dist-dir}/bsh-classpath-${version}.jar"/>
+	<property name="reflect-jar" 
+		value="${dist-dir}/bsh-reflect-${version}.jar"/>
+	<property name="util-jar" value="${dist-dir}/bsh-util-${version}.jar"/>
+	<property name="bsf-jar" value="${dist-dir}/bsh-bsf-${version}.jar"/>
+	<property name="bshservlet-wbsh-war" 
+		value="${dist-dir}/bshservlet-wbsh.war"/>
+	<property name="bshservlet-war" value="${dist-dir}/bshservlet.war"/>
+
+	<!-- Put the auto-generated command doc in the manual dir -->
+	<property name="commands-bshdoc" 
+		value="docs/manual/bshcommands-bshdoc.xml"/>
+
+<!-- Begin Targets -->
+
+	<!-- The javacc targets could be smarter... -->
+	<target name="checkjjt">
+		<uptodate property="jjtree.notRequired" 
+				targetfile="${src-dir}/bsh/bsh.jj"
+		>
+			<srcfiles dir="${src-dir}/bsh" includes="bsh.jjt"/>
+		</uptodate>
+	</target>
+	<target name="checkjj">
+		<uptodate property="javacc.notRequired" 
+				targetfile="${src-dir}/bsh/Parser.java"
+		>
+			<srcfiles dir="${src-dir}/bsh" includes="bsh.jj"/>
+		</uptodate>
+	</target>
+
+	<!-- Create bsh.jj when bsh.jjt changes. -->
+	<target name="jjtree" unless="jjtree.notRequired" depends="checkjjt">
+		<java classname="jjtree"
+			fork="yes"
+			failonerror="yes" >
+			<arg 
+				line="-OUTPUT_DIRECTORY=${src-dir}/bsh ${src-dir}/bsh/bsh.jjt"/>
+			<classpath>
+				<fileset refid="lib-fileset"/>
+			</classpath>
+		</java>
+	</target>
+
+	<!-- Create Parser.java when bsh.jj changes. -->
+	<target name="javacc" unless="javacc.notRequired" depends="checkjj">
+		<java classname="javacc"
+			fork="yes"
+			failonerror="yes" >
+			<!-- classpath="${javacc-lib}" -->
+			<arg line="-OUTPUT_DIRECTORY=${src-dir}/bsh ${src-dir}/bsh/bsh.jj"/>
+			<classpath>
+				<fileset refid="lib-fileset"/>
+			</classpath>
+		</java>
+	</target>
+
+	<target name="compile" depends="jjtree,javacc,builddir">
+		<!-- exclude the ${excludes} as well as anything under a "bak" dir -->
+		<!--compiler="${build-compiler}"-->
+		<javac srcdir="${src-dir}:${test-src-dir}:${bsf-src-dir}"
+			destdir="${build-dir}"
+			deprecation="${deprecation}"
+			optimize="on"
+			debug="off"
+			includes="**/*.java"
+			excludes="${excludes},**/bak/**"
+		>
+			<classpath>
+				<fileset refid="lib-fileset"/>
+			</classpath>
+		</javac>
+
+		<copy todir="${build-dir}">
+			<fileset dir="${src-dir}">
+				<!-- install the bsh commands -->
+				<patternset refid="commands-bsh-patternset"/>
+				<!-- install the util/lib stuff -->
+				<patternset refid="util-lib-patternset"/>
+<!-- need to break this into a separate target to use exclude -->
+				<!-- install the servlet stuff -->
+				<patternset refid="bshservlet-patternset"/>
+			</fileset>
+
+			<!-- install bsh commands used in tests -->
+			<fileset dir="${test-src-dir}">
+				<patternset>
+					<include name="**/*.bsh"/>
+				</patternset>
+			</fileset>
+		</copy>
+	</target>
+
+
+	<target name="javadoc" depends="compile">
+		<mkdir dir="${javadoc-dir}" />
+		<javadoc packagenames="bsh,bsh.util,bsh.classpath,bsh.reflect"
+			 sourcepath="${src-dir}"
+			 destdir="${javadoc-dir}"
+			 author="true"
+			 version="true"
+			 use="true"
+			 windowtitle="BeanShell"
+			 doctitle="&lt;h1&gt;BeanShell&lt;h1&gt;"
+			 bottom="&lt;em&gt;&#169; 2000 pat@pat.net :-)&lt;/em&gt;"
+		/>
+	</target>
+
+	<!-- Jar target setup -->
+
+	<!--
+	<target name="superclean" description="Remove any generated files.">
+	</target>
+	-->
+
+	<target name="clean">
+		<!-- 
+			I'd like to remove the classes dir itself, but ant won't let
+			me.  The filset targets above will error out if the dir doesn't
+			exists... even before they are ever referenced.
+
+			I think maybe this has been fixed in Ant 1.4... need to check.
+		-->
+		<delete quiet="true" includeEmptyDirs="true">
+			<fileset dir="${build-dir}" includes="**/*"/>
+		</delete>
+
+		<delete quiet="true" dir="${javadoc-dir}"/>
+		<delete quiet="true" dir="${dist-dir}"/>
+
+		<!-- Moved to dist dir
+		<delete quiet="true" file="${javadoc-jar}"/>
+		<delete quiet="true" file="${src-jar}"/>
+		<delete quiet="true" file="${core-jar}"/>
+		<delete quiet="true" file="${all-jar}"/>
+		<delete quiet="true" file="${util-jar}"/>
+		<delete quiet="true" file="${classpath-jar}"/>
+		<delete quiet="true" file="${commands-jar}"/>
+		<delete quiet="true" file="${reflect-jar}"/>
+		<delete quiet="true" file="${bsf-jar}"/>
+		<delete quiet="true" file="${bshservlet-wbsh-war}"/>
+		<delete quiet="true" file="${bshservlet-war}"/>
+		-->
+
+		<delete quiet="true" file="${commands-bshdoc}"/>
+		<!-- hack -->
+		<delete quiet="true" file="bshcommands.html"/>
+	</target>
+
+	<target name="builddir">
+		<mkdir dir="${build-dir}" />
+		<!-- hack, make sure it's there for fileset -->
+		<mkdir dir="${lib-dir}" />
+	</target>
+
+	<!-- Begin: Filesets -->
+
+	<fileset id="lib-fileset" dir="${lib-dir}">
+		<patternset>
+			<include name="*.jar"/>
+		</patternset>
+	</fileset>
+
+	<fileset id="core-fileset" dir="${build-dir}">
+		<patternset>
+			<include name="bsh/*.class"/>
+<!-- something funny here...  Console ends up in jarall, but not Remote -->
+			<exclude name="bsh/Console.class"/>
+			<exclude name="bsh/Remote.class"/>
+		</patternset>
+	</fileset>
+
+	<fileset id="classpath-fileset" dir="${build-dir}">
+		<patternset>
+			<include name="bsh/classpath/*.class"/>
+		</patternset>
+	</fileset>
+
+	<fileset id="reflect-fileset" dir="${build-dir}">
+		<patternset>
+			<include name="bsh/reflect/*.class"/>
+		</patternset>
+	</fileset>
+
+	<fileset id="collection-fileset" dir="${build-dir}">
+		<patternset>
+			<include name="bsh/collection/*.class"/>
+		</patternset>
+	</fileset>
+
+	<fileset id="bsf-fileset" dir="${build-dir}">
+		<patternset>
+			<include name="bsh/util/BeanShellBSFEngine.class"/>
+		</patternset>
+	</fileset>
+
+	<fileset id="bshservlet-fileset" dir="${build-dir}">
+		<patternset id="bshservlet-patternset">
+			<include name="bsh/servlet/*.class"/>
+			<include name="bsh/servlet/*.bsh"/>
+			<include name="bsh/servlet/*.template"/>
+		</patternset>
+	</fileset>
+
+	<fileset id="commands-fileset" dir="${build-dir}">
+		<patternset>
+			<include name="bsh/commands/*.class"/>
+		</patternset>
+		<patternset id="commands-bsh-patternset">
+			<include name="bsh/commands/*.bsh"/>
+			<exclude name="CVS"/>
+		</patternset>
+	</fileset>
+
+	<fileset id="util-fileset" dir="${build-dir}">
+		<patternset>
+			<include name="bsh/util/*.class"/>
+			<exclude name="bsh/util/BeanShellBSFEngine.class"/>
+		</patternset>
+		<patternset id="util-lib-patternset">
+			<include name="bsh/util/lib/*"/>
+			<exclude name="CVS"/>
+		</patternset>
+	</fileset>
+
+	<!-- End: Filesets -->
+
+	<!-- Jar targets -->
+
+	<target name="jarcore" depends="compile,_distdir">
+		<delete file="${core-jar}"/>
+		<jar jarfile="${core-jar}" manifest="src/Manifest.interp">
+			<fileset refid="core-fileset"/>
+		</jar>
+	</target>
+
+	<target name="jarall" depends="compile,_distdir">
+		<delete file="${all-jar}"/>
+		<jar jarfile="${all-jar}" manifest="src/Manifest.console">
+			<fileset refid="core-fileset"/>
+			<fileset refid="classpath-fileset"/>
+			<fileset refid="reflect-fileset"/>
+			<fileset refid="collection-fileset"/>
+			<fileset refid="util-fileset"/>
+			<fileset refid="commands-fileset"/>
+			<fileset refid="bsf-fileset"/>
+			<fileset refid="bshservlet-fileset"/>
+<!-- hack, see core-fileset -->
+			<fileset dir="${build-dir}">
+				<patternset>
+					<include name="bsh/Remote.class"/>
+					<include name="bsh/Console.class"/>
+				</patternset>
+			</fileset>
+		</jar>
+	</target>
+
+	<target name="jarsrc" depends="_distdir">
+		<delete file="${src-jar}"/>
+		<jar jarfile="${src-jar}">
+			<fileset dir="${basedir}/..">
+				<patternset>
+					<include name="BeanShell/**/*"/>
+					<exclude name="BeanShell/classes/**/*"/>
+					<exclude name="BeanShell/*javadoc*"/>
+					<exclude name="BeanShell/javadoc/**/*"/>
+					<!--exclude name="BeanShell/docs/**/*"/-->
+					<exclude name="**/CVS"/>
+					<exclude name="**/*.jar"/>
+					<exclude name="**/*.war"/>
+				</patternset>
+			</fileset>
+		</jar>
+	</target>
+
+	<target name="_distdir">
+		<mkdir dir="${dist-dir}" />
+	</target>
+
+	<!-- Make all of the dist jars -->
+	<target name="dist" depends="_distdir,compile,jarcore,jarall,javadoc,jarsrc,bshservlet-war,bshservlet-wbsh-war,bshdoc">
+
+		<delete file="${commands-jar}"/>
+		<jar jarfile="${commands-jar}">
+			<fileset refid="commands-fileset"/>
+		</jar>
+
+		<delete file="${classpath-jar}"/>
+		<jar jarfile="${classpath-jar}">
+			<fileset refid="classpath-fileset"/>
+		</jar>
+
+		<delete file="${reflect-jar}"/>
+		<jar jarfile="${reflect-jar}">
+			<fileset refid="reflect-fileset"/>
+		</jar>
+
+		<delete file="${util-jar}"/>
+		<jar jarfile="${util-jar}">
+			<fileset refid="util-fileset"/>
+		</jar>
+
+		<delete file="${bsf-jar}"/>
+		<jar jarfile="${bsf-jar}">
+			<fileset refid="bsf-fileset"/>
+		</jar>
+
+		<delete file="${javadoc-jar}"/>
+		<jar jarfile="${javadoc-jar}" basedir="${javadoc-dir}"/>
+
+		<!-- Build the documentation -->
+		<!-- Don't build the documentation right now.
+			It's breaking the jakarta GUMP build for some reason.
+		<ant dir="docs/manual"/>
+		-->
+	</target>
+
+	<target name="bshservlet-war" depends="compile" unless="exclude-servlet">
+		<war warfile="${bshservlet-war}" 
+			webxml="${src-dir}/bsh/servlet/example-web.xml">
+			<!--classes dir="${build-dir}" includes="bsh/servlet/**/*"/-->
+			<fileset dir="${src-dir}/bsh/servlet/" includes="index.html"/>
+		</war>
+	</target>
+	<target name="bshservlet-wbsh-war" 
+					depends="compile,jarall" unless="exclude-servlet">
+		<war warfile="${bshservlet-wbsh-war}" 
+			webxml="${src-dir}/bsh/servlet/example-web.xml">
+			<!--classes dir="${build-dir}" includes="bsh/servlet/**/*"/-->
+			<fileset dir="${src-dir}/bsh/servlet/" includes="index.html"/>
+			<lib dir="${dist-dir}" includes="${all-jar-name}"/>
+		</war>
+	</target>
+
+	<!-- 
+		This target produces XML source for beanshell documentation of the 
+		bsh command set.
+		
+		The bshdoc script requires Java 1.4 for regular expressions.
+	
+		Notes:
+			- I am concerned that the fileset argument could be too large for
+			parallel if ant is using full path names.  But the bshdoc script 
+			wants all of the files simultaneously to produce one XML file
+			amenable to indexing, etc.
+			- Needs some file timestamp checking... mapper tag might help.
+
+		The output goes in the docs area, which has its own build file.
+	-->
+	<target name="bshdoc" depends="jarall">     
+		<!-- 
+			I'd like to use the java target, but there seems to be no way
+			to supply a fileset in an arg argument.
+		-->
+		<apply executable="java" output="${commands-bshdoc}" parallel="true">
+			<arg value="-cp"/>
+			<arg value="${all-jar}"/>
+			<arg value="bsh.Interpreter"/>
+			<arg file="scripts/bshdoc.bsh"/>
+			<!--fileset refid="commands-fileset"/-->
+			<fileset dir="src/bsh/commands" includes="*.bsh"/>
+		</apply>
+	</target>   
+
+	<!-- 
+		Run a script specified in the file property using the build 
+		classpath (e.g. latest compiled version)
+			
+			ant -Dfile=foo.bsh bsh
+	-->
+	<target name="bsh" depends="compile">
+		<java classname="bsh.Interpreter" fork="true">
+			<classpath>
+				<pathelement location="${build-dir}"/>
+			</classpath>
+			<arg value="${file}"/>
+		</java>
+	</target>
+
+	<!-- 
+		Run the test suite.
+	-->
+	<target name="test">
+		<antcall target="bsh">
+			<param name="file" value="tests/RunAllTests.bsh"/>
+		</antcall>
+	</target>
+
+</project>
