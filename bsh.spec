@@ -30,7 +30,7 @@
 
 Name:           bsh
 Version:        1.3.0
-Release:        28%{?dist}
+Release:        29%{?dist}
 Epoch:          0
 Summary:        Lightweight Scripting for Java
 License:        (SPL or LGPLv2+) and Public Domain
@@ -231,6 +231,9 @@ fi
 %attr(0755,root,root) %{_bindir}/%{name}*
 
 %changelog
+* Fri Dec 27 2013 Daniel Mach <dmach@redhat.com> - 01.3.0-29
+- Mass rebuild 2013-12-27
+
 * Thu Oct 24 2013 Mikolaj Izdebski <mizdebsk@redhat.com> - 0:1.3.0-28
 - Remove desktop files
 
